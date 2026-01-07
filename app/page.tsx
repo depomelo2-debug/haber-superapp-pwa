@@ -4,7 +4,7 @@ import { Menu, Home, BookOpen, Sun, Cloud, CloudRain, Snowflake, MapPin, CloudLi
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from "@/components/ui/sheet";
 import Link from "next/link";
-import { useState, useEffect, Suspense } from "react"; // Suspense eklendi
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 // --- AYARLAR ---
@@ -27,7 +27,7 @@ const WMO_CODES: Record<number, { label: string; icon: any; color: string }> = {
   95: { label: "Fırtına", icon: CloudLightning, color: "text-purple-500" },
 };
 
-// --- HASSAS FİYAT KUTUSU ---
+// --- HASSAS FİYAT KUTUSU (YEŞİL/KIRMIZI OKLAR) ---
 const LivePriceCard = ({ label, value, icon: Icon, colorClass }: any) => {
   const [displayValue, setDisplayValue] = useState(value);
   const [trend, setTrend] = useState<"steady" | "up" | "down">("steady");
@@ -60,12 +60,12 @@ const LivePriceCard = ({ label, value, icon: Icon, colorClass }: any) => {
   let TrendIcon = null;
 
   if (trend === "up") {
-    containerClass = "bg-green-50 border-green-200 ring-1 ring-green-300 transition-all duration-300";
+    containerClass = "bg-green-50 border-green-200 ring-1 ring-green-300 transition-all duration-300 scale-105";
     iconBgClass = "bg-green-200 text-green-700";
     TrendIcon = <ArrowUp size={14} className="text-green-600 animate-bounce" />;
   } 
   else if (trend === "down") {
-    containerClass = "bg-red-50 border-red-200 ring-1 ring-red-300 transition-all duration-300";
+    containerClass = "bg-red-50 border-red-200 ring-1 ring-red-300 transition-all duration-300 scale-105";
     iconBgClass = "bg-red-200 text-red-700";
     TrendIcon = <ArrowDown size={14} className="text-red-600 animate-bounce" />;
   }
@@ -88,7 +88,7 @@ const LivePriceCard = ({ label, value, icon: Icon, colorClass }: any) => {
   );
 };
 
-// --- ASIL İÇERİK (Hata veren kısım buradaydı, şimdi izole ettik) ---
+// --- ANA İÇERİK ---
 function MainContent() {
   const searchParams = useSearchParams();
   const cityParam = searchParams.get('sehir');
@@ -100,15 +100,19 @@ function MainContent() {
   const [prayer, setPrayer] = useState<any>(null);
   const [finance, setFinance] = useState({ dolar: "--", euro: "--", gram: "--", ceyrek: "--" });
   const [news, setNews] = useState<any[]>([]);
+  const [lastUpdate, setLastUpdate] = useState<string>("Yükleniyor...");
   const [mounted, setMounted] = useState(false);
 
-  // CANLILIK SİMÜLASYONU
+  // CANLILIK SİMÜLASYONU (0.01 Kuruş Oynama)
   const simulateLiveMarket = (realData: any) => {
     const randomize = (val: string) => {
       if (!val || val === "--") return val;
       const num = parseFloat(val.replace(/\./g, '').replace(',', '.'));
+      
+      // Sadece 0.01 ile 0.02 arasında oynasın
       const fixedChange = (Math.random() * 0.02); 
       const direction = Math.random() > 0.5 ? 1 : -1;
+      
       const newVal = num + (fixedChange * direction);
       return newVal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
@@ -123,19 +127,23 @@ function MainContent() {
 
   const fetchAllData = async () => {
     try {
+      // 1. Kendi API'miz (NewsAPI ve Finans buradan geliyor)
       const res = await fetch('/api/data');
       if (res.ok) {
         const data = await res.json();
         setFinance(prev => simulateLiveMarket(data.finance));
         if (data.news.length > 0) setNews(data.news);
+        if (data.lastUpdate) setLastUpdate(data.lastUpdate);
       }
     } catch (e) { console.error("Veri hatası", e); }
 
     try {
+      // 2. Hava Durumu
       const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${activeLocation.lat}&longitude=${activeLocation.lon}&current=temperature_2m,weather_code&timezone=auto`);
       const wData = await wRes.json();
       setWeather(wData);
 
+      // 3. Namaz Vakitleri
       const todayStr = new Date().toLocaleDateString("en-GB", { timeZone: "Europe/Istanbul" }).split('/').join('-');
       const pRes = await fetch(`https://api.aladhan.com/v1/timings/${todayStr}?latitude=${activeLocation.lat}&longitude=${activeLocation.lon}&method=13`);
       const pData = await pRes.json();
@@ -146,7 +154,7 @@ function MainContent() {
   useEffect(() => {
     setMounted(true);
     fetchAllData();
-    const interval = setInterval(fetchAllData, 3000);
+    const interval = setInterval(fetchAllData, 3000); // 3 saniyede bir güncelle
     return () => clearInterval(interval);
   }, [activeLocation]);
 
@@ -156,7 +164,7 @@ function MainContent() {
   const WeatherIcon = weatherInfo.icon;
   const timings = prayer?.data?.timings;
 
-  if (!mounted) return <div className="flex justify-center items-center h-screen animate-pulse">Yükleniyor...</div>;
+  if (!mounted) return <div className="flex justify-center items-center h-screen animate-pulse">Uygulama Yükleniyor...</div>;
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
@@ -191,7 +199,7 @@ function MainContent() {
       {/* İÇERİK */}
       <main className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
         
-        {/* HAVA & NAMAZ */}
+        {/* HAVA & NAMAZ KARTI */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white p-5 rounded-2xl shadow-lg relative overflow-hidden">
           <div className="flex justify-between items-start z-10 relative">
             <div>
@@ -212,7 +220,7 @@ function MainContent() {
           </div>
         </div>
 
-        {/* PİYASA (YEŞİL/KIRMIZI YANIP SÖNEN) */}
+        {/* PİYASA (YEŞİL/KIRMIZI HAREKETLİ) */}
         <div className="grid grid-cols-2 gap-3">
           <LivePriceCard label="Dolar" value={finance.dolar} icon={DollarSign} colorClass="bg-green-100 text-green-600" />
           <LivePriceCard label="Euro" value={finance.euro} icon={Euro} colorClass="bg-blue-100 text-blue-600" />
@@ -226,7 +234,7 @@ function MainContent() {
               <Newspaper size={18} className="text-red-600"/> Gündemden
             </h3>
             <span className="text-[10px] text-gray-400 flex items-center gap-1">
-               <RefreshCw size={10} className="animate-spin"/> Güncelleniyor
+               <RefreshCw size={10} className="animate-spin"/> {lastUpdate}
             </span>
         </div>
         
@@ -262,7 +270,7 @@ function MainContent() {
         </div>
       </main>
 
-      {/* FOOTER */}
+      {/* FOOTER NAVİGASYON */}
       <nav className="bg-white border-t fixed bottom-0 w-full flex justify-around p-2 z-20 pb-6 shadow-2xl">
         <Link href="/" className="flex flex-col items-center gap-1 p-2 text-red-600">
           <Home size={22} /><span className="text-[10px] font-medium">Anasayfa</span>
@@ -278,8 +286,7 @@ function MainContent() {
   );
 }
 
-// --- ANA COMPONENT (SARMALAYICI) ---
-// Hatayı çözen kısım burası. MainContent'i Suspense içine aldık.
+// --- ANA SARMALAYICI (VERCEL HATASI ÇÖZÜMÜ) ---
 export default function HomePage() {
   return (
     <Suspense fallback={<div className="flex justify-center items-center h-screen animate-pulse">Yükleniyor...</div>}>

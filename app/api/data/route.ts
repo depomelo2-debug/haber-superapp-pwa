@@ -1,25 +1,23 @@
 import { NextResponse } from "next/server";
 
-// YEDEK VERİLER (İnternet tamamen koparsa bunlar görünür)
-const DEMO_FINANCE = {
+// YEDEK VERİLER (Eğer API limitin dolarsa bunlar görünür)
+const FALLBACK_FINANCE = {
   dolar: "34.20",
   euro: "37.15",
   gram: "2980.50",
   ceyrek: "4900.00"
 };
 
-const DEMO_NEWS = [
-  { title: "Sistem Mesajı: Güncel haberlere şu an ulaşılamıyor (Demo Mod)", pubDate: new Date().toISOString(), author: "Sistem", thumbnail: null, link: "#" },
-  { title: "İstanbul'da beklenen yağış başladı", pubDate: new Date().toISOString(), author: "Hava Durumu", thumbnail: null, link: "#" },
-  { title: "Teknoloji dünyasında yeni gelişmeler", pubDate: new Date().toISOString(), author: "Teknoloji", thumbnail: null, link: "#" }
+const FALLBACK_NEWS = [
+  { title: "Haber akışı güncelleniyor...", pubDate: new Date().toISOString(), author: "Sistem", thumbnail: null, link: "#" }
 ];
 
 export async function GET() {
-  let financeData = { ...DEMO_FINANCE };
+  let financeData = { ...FALLBACK_FINANCE };
   let newsData = [];
 
   // ----------------------------------------------------------------
-  // 1. MODÜL: FİNANS VERİSİ
+  // 1. MODÜL: FİNANS VERİSİ (Genelpara / Truncgil)
   // ----------------------------------------------------------------
   try {
     const financeRes = await fetch('https://finans.truncgil.com/today.json', {
@@ -54,17 +52,20 @@ export async function GET() {
       if (c) financeData.ceyrek = c;
     }
   } catch (e) {
-    console.error("Finans API Hatası (Yedek kullanılıyor):", e);
+    console.error("Finans API Hatası:", e);
   }
 
   // ----------------------------------------------------------------
-  // 2. MODÜL: HABERLER (3 AŞAMALI GÜVENLİK)
+  // 2. MODÜL: HABERLER (SENİN NEWSAPI ANAHTARIN İLE)
   // ----------------------------------------------------------------
-  
-  // PLAN A: Senin NewsAPI Key'in
   try {
+    // Senin verdiğin özel API Anahtarı
     const apiKey = "743ace52381a4d0e9e7ac3642c5596c5";
-    const newsRes = await fetch(`https://newsapi.org/v2/top-headlines?country=tr&apiKey=${apiKey}&pageSize=10`, { next: { revalidate: 120 } });
+    
+    // Türkiye gündemi (tr), Genel kategori
+    const newsUrl = `https://newsapi.org/v2/top-headlines?country=tr&category=general&pageSize=10&apiKey=${apiKey}`;
+    
+    const newsRes = await fetch(newsUrl, { next: { revalidate: 300 } }); // 5 dakikada bir yenile
     
     if (newsRes.ok) {
       const json = await newsRes.json();
@@ -73,43 +74,48 @@ export async function GET() {
           title: item.title,
           link: item.url,
           pubDate: item.publishedAt,
-          author: item.source.name || "NewsAPI",
+          author: item.source.name || "Haber",
+          // NewsAPI bazen resim vermezse TRT logosu veya boş ikon kullanacağız (Frontend halleder)
           thumbnail: item.urlToImage
         }));
       }
+    } else {
+      console.error("NewsAPI Hatası:", newsRes.status);
     }
-  } catch (e) { console.error("Plan A (NewsAPI) başarısız:", e); }
+  } catch (e) { 
+    console.error("Haber API Bağlantı Hatası:", e); 
+  }
 
-  // PLAN B: Eğer Plan A çalışmazsa -> TRT RSS (Manuel Parse)
+  // Eğer NewsAPI kotası dolarsa veya hata verirse TRT RSS'i yedek olarak kullan
   if (newsData.length === 0) {
     try {
       const trtRes = await fetch('https://www.trthaber.com/xml/sondakika.rss', { cache: 'no-store' });
       if (trtRes.ok) {
         const text = await trtRes.text();
         const items = text.match(/<item>([\s\S]*?)<\/item>/g)?.slice(0, 10) || [];
-        
         newsData = items.map(item => {
           const title = item.match(/<title>(.*?)<\/title>/)?.[1]?.replace('<![CDATA[', '').replace(']]>', '') || "Haber";
           const link = item.match(/<link>(.*?)<\/link>/)?.[1] || "#";
           const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] || "";
-          // TRT resim bulma
           const img = item.match(/url="([^"]+)"/)?.[1] || item.match(/src="([^"]+)"/)?.[1] || null;
-
           return { title, link, pubDate, author: "TRT Haber", thumbnail: img };
         });
       }
-    } catch (e) { console.error("Plan B (TRT) başarısız:", e); }
+    } catch (e) { console.error("Yedek RSS hatası", e); }
   }
 
-  // PLAN C: Eğer o da çalışmazsa -> DEMO VERİLER
-  if (newsData.length === 0) {
-    newsData = DEMO_NEWS;
-  }
+  // Eğer her şey patlarsa demo göster
+  if (newsData.length === 0) newsData = FALLBACK_NEWS;
 
-  // SONUÇ:
+  // SONUÇLARI DÖNDÜR
   return NextResponse.json({
     finance: financeData,
     news: newsData,
     lastUpdate: new Date().toLocaleTimeString('tr-TR')
-  }, { headers: { 'Cache-Control': 'no-store' } });
+  }, { 
+    headers: { 
+      'Cache-Control': 'no-store, max-age=0',
+      'Access-Control-Allow-Origin': '*' // CORS izni
+    } 
+  });
 }
