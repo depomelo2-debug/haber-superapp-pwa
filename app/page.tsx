@@ -4,7 +4,7 @@ import { Menu, Home, BookOpen, Sun, Cloud, CloudRain, Snowflake, MapPin, CloudLi
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from "@/components/ui/sheet";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react"; // Suspense eklendi
 import { useSearchParams } from "next/navigation";
 
 // --- AYARLAR ---
@@ -33,7 +33,6 @@ const LivePriceCard = ({ label, value, icon: Icon, colorClass }: any) => {
   const [trend, setTrend] = useState<"steady" | "up" | "down">("steady");
 
   useEffect(() => {
-    // Değer değişti mi kontrol et
     if (value !== "--" && value !== displayValue) {
       const parse = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.'));
       const curr = parse(value);
@@ -50,7 +49,6 @@ const LivePriceCard = ({ label, value, icon: Icon, colorClass }: any) => {
         setDisplayValue(value);
         return () => clearTimeout(timer);
       }
-      // İlk açılış
       setDisplayValue(value);
     } else if (value !== "--" && displayValue === "--") {
        setDisplayValue(value);
@@ -90,7 +88,8 @@ const LivePriceCard = ({ label, value, icon: Icon, colorClass }: any) => {
   );
 };
 
-export default function HomePage() {
+// --- ASIL İÇERİK (Hata veren kısım buradaydı, şimdi izole ettik) ---
+function MainContent() {
   const searchParams = useSearchParams();
   const cityParam = searchParams.get('sehir');
   const selectedKey = (cityParam && LOCATIONS[cityParam]) ? cityParam : 'niksar';
@@ -103,21 +102,14 @@ export default function HomePage() {
   const [news, setNews] = useState<any[]>([]);
   const [mounted, setMounted] = useState(false);
 
-  // --- İNCE AYARLI CANLILIK SİMÜLASYONU ---
+  // CANLILIK SİMÜLASYONU
   const simulateLiveMarket = (realData: any) => {
     const randomize = (val: string) => {
       if (!val || val === "--") return val;
       const num = parseFloat(val.replace(/\./g, '').replace(',', '.'));
-      
-      // DEĞİŞİKLİK BURADA: Yüzde değil, sabit kuruş oynuyoruz.
-      // Sadece 0.01 TL ile 0.02 TL arası oynasın.
       const fixedChange = (Math.random() * 0.02); 
-      
-      // %50 şansla yukarı, %50 şansla aşağı
       const direction = Math.random() > 0.5 ? 1 : -1;
-      
       const newVal = num + (fixedChange * direction);
-      
       return newVal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
@@ -131,18 +123,15 @@ export default function HomePage() {
 
   const fetchAllData = async () => {
     try {
-      // 1. Kendi API'miz
       const res = await fetch('/api/data');
       if (res.ok) {
         const data = await res.json();
-        // Veriyi simülasyona sokuyoruz (çok minik oynasın diye)
         setFinance(prev => simulateLiveMarket(data.finance));
         if (data.news.length > 0) setNews(data.news);
       }
     } catch (e) { console.error("Veri hatası", e); }
 
     try {
-      // 2. Hava & Namaz
       const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${activeLocation.lat}&longitude=${activeLocation.lon}&current=temperature_2m,weather_code&timezone=auto`);
       const wData = await wRes.json();
       setWeather(wData);
@@ -157,7 +146,6 @@ export default function HomePage() {
   useEffect(() => {
     setMounted(true);
     fetchAllData();
-    // 3 saniyede bir güncelle
     const interval = setInterval(fetchAllData, 3000);
     return () => clearInterval(interval);
   }, [activeLocation]);
@@ -276,16 +264,26 @@ export default function HomePage() {
 
       {/* FOOTER */}
       <nav className="bg-white border-t fixed bottom-0 w-full flex justify-around p-2 z-20 pb-6 shadow-2xl">
-        <div className="flex flex-col items-center gap-1 p-2 text-red-600">
+        <Link href="/" className="flex flex-col items-center gap-1 p-2 text-red-600">
           <Home size={22} /><span className="text-[10px] font-medium">Anasayfa</span>
-        </div>
-        <div className="flex flex-col items-center gap-1 p-2 text-gray-400">
+        </Link>
+        <Link href="/piyasa" className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-red-600 transition-colors">
           <TrendingUp size={22} /><span className="text-[10px] font-medium">Piyasa</span>
-        </div>
-        <div className="flex flex-col items-center gap-1 p-2 text-gray-400">
+        </Link>
+        <Link href="/dini" className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-emerald-600 transition-colors">
           <BookOpen size={22} /><span className="text-[10px] font-medium">Dini</span>
-        </div>
+        </Link>
       </nav>
     </div>
+  );
+}
+
+// --- ANA COMPONENT (SARMALAYICI) ---
+// Hatayı çözen kısım burası. MainContent'i Suspense içine aldık.
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center h-screen animate-pulse">Yükleniyor...</div>}>
+      <MainContent />
+    </Suspense>
   );
 }
