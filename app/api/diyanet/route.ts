@@ -11,31 +11,32 @@ export async function GET(request: Request) {
   // SENİN VERDİĞİN API ANAHTARI
   const API_KEY = "342|ZZvj3D8VCwj79MFbOKTx5c9sxdcAA627ILqIpw230209821c";
   
-  // Diyanet Açık Kaynak API Adresi
-  // Not: Dev ortamı olduğu için endpoint yapısı değişebilir, standart yapıyı deniyoruz.
+  // Endpoint'i kontrol edelim. Bazen /v1/surah bazen /v1/quran olabilir.
+  // Standart yapıyı kullanıyoruz.
   const baseUrl = `https://acikkaynakkuran-dev.diyanet.gov.tr/api/v1/surah/${sureId}`;
+
+  console.log("Diyanet'e gidiliyor:", baseUrl); // Loglara basar
 
   try {
     const res = await fetch(baseUrl, {
       headers: {
         'Authorization': `Bearer ${API_KEY}`,
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0' // Bazı sunucular bunu ister
+        'Accept': 'application/json'
       },
       cache: 'no-store'
     });
 
     if (!res.ok) {
-      // Eğer Diyanet hata verirse loglayalım
-      console.error(`Diyanet API Hatası: ${res.status}`);
-      return NextResponse.json({ error: "Diyanet sunucusuna ulaşılamadı" }, { status: res.status });
+      console.error(`Diyanet Hatası: ${res.status} ${res.statusText}`);
+      // Eğer Diyanet 404 veriyorsa, biz de frontend'e bunu söyleyelim
+      return NextResponse.json({ error: "Diyanet sunucusu bu sureyi bulamadı veya endpoint hatalı." }, { status: res.status });
     }
 
     const data = await res.json();
     return NextResponse.json(data);
 
   } catch (error) {
-    console.error("Proxy Hatası:", error);
-    return NextResponse.json({ error: "Veri çekme hatası" }, { status: 500 });
+    console.error("Sunucu Hatası:", error);
+    return NextResponse.json({ error: "Sunucu bağlantı hatası" }, { status: 500 });
   }
 }
